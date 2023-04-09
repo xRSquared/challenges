@@ -9,12 +9,12 @@ struct Message {
     pub dest: String,
     pub body: Body,
 }
-
 #[derive(Debug, Serialize, Deserialize)]
 struct Body {
     #[serde(rename = "msg_id")]
     pub id: Option<usize>,
     pub in_reply_to: Option<usize>,
+    #[serde(flatten)] // IMPORTANT: removes payload from json serialization
     pub payload: PayLoad,
 }
 
@@ -45,7 +45,7 @@ struct Node {
 impl Node {
     pub fn step(&mut self, input: Message, output: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
-            PayLoad::Echo { echo } => {
+            | PayLoad::Echo { echo } => {
                 let reply = Message {
                     src: input.dest,
                     dest: input.src,
@@ -56,13 +56,13 @@ impl Node {
                     },
                 };
                 serde_json::to_writer(&mut *output, &reply)
-                    .context("serialize response to init")?;
-                output.write_all(b"\n").context("write trailing newline")?;
+                    .context("Serialize response to init")?;
+                output.write_all(b"\n").context("Write trailing newline")?;
                 self.id += 1;
-            }
-            PayLoad::EchoOk { .. } => {}
+            },
+            | PayLoad::EchoOk { .. } => {},
 
-            PayLoad::Init { .. } => {
+            | PayLoad::Init { .. } => {
                 let reply = Message {
                     src: input.dest,
                     dest: input.src,
@@ -73,13 +73,13 @@ impl Node {
                     },
                 };
                 serde_json::to_writer(&mut *output, &reply)
-                    .context("serialize response to init")?;
-                output.write_all(b"\n").context("write trailing newline")?;
+                    .context("Serialize response to init")?;
+                output.write_all(b"\n").context("Write trailing newline")?;
                 self.id += 1;
-            }
+            },
 
             // NOTE: this should only be used by Maelstrom client
-            PayLoad::InitOk { .. } => bail!("recieved init_ok message. This shouldn't happen"),
+            | PayLoad::InitOk { .. } => bail!("Recieved init_ok message. This shouldn't happen"),
         }
         return Ok(());
     }
