@@ -1,4 +1,4 @@
-use std::io::{BufRead, StdoutLock, Write};
+use std::{io::{BufRead, StdoutLock, Write}, collections::HashMap};
 
 use anyhow::{Context, Ok};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -47,12 +47,13 @@ where
     Payload: DeserializeOwned,
     N: Node<State, Payload>,
 {
-    let mut stdin = std::io::stdin().lock().lines();
+    let stdin = std::io::stdin().lock();
+    let mut lines = stdin.lines();
 
     let mut stdout = std::io::stdout().lock();
 
     let init_message: Message<InitPayload> = serde_json::from_str(
-        &stdin
+        &lines
             .next()
             .expect("No init message received.")
             .context("Failed to read init message.")?,
@@ -78,7 +79,7 @@ where
         .write_all(b"\n")
         .context("Writing trailing newline.")?;
 
-    for input in stdin {
+    for input in lines {
         let input = input.context("Maelstrom input could not be read.")?;
         let message: Message<Payload> =
             serde_json::from_str(&input).context("Maelstrom input could not be deserialized.")?;
