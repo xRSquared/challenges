@@ -1,22 +1,8 @@
-use std::io::{StdoutLock, Write};
+use rust_distributed_sys_challenge::*;
 
 use anyhow::{bail, Context, Ok};
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Message {
-    pub src: String,
-    pub dest: String,
-    pub body: Body,
-}
-#[derive(Debug, Serialize, Deserialize)]
-struct Body {
-    #[serde(rename = "msg_id")]
-    pub id: Option<usize>,
-    pub in_reply_to: Option<usize>,
-    #[serde(flatten)] // IMPORTANT: removes payload from json serialization
-    pub payload: PayLoad,
-}
+use std::io::{StdoutLock, Write};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")] // IMPORTANT: returns {type:"echo", echo:"..."}
@@ -37,13 +23,13 @@ enum PayLoad {
     InitOk,
 }
 
-struct Node {
+struct DistributedNode {
     id: usize,
 }
 
 // NOTE: state machine
-impl Node {
-    pub fn step(&mut self, input: Message, output: &mut StdoutLock) -> anyhow::Result<()> {
+impl Node<PayLoad> for DistributedNode {
+    fn step(&mut self, input: Message<PayLoad>, output: &mut StdoutLock) -> anyhow::Result<()> {
         match input.body.payload {
             | PayLoad::Echo { echo } => {
                 let reply = Message {
@@ -86,18 +72,5 @@ impl Node {
 }
 
 fn main() -> anyhow::Result<()> {
-    let stdin = std::io::stdin().lock();
-    let inputs = serde_json::Deserializer::from_reader(stdin).into_iter::<Message>();
-
-    let mut stdout = std::io::stdout().lock();
-
-    let mut state = Node { id: 0 };
-
-    for input in inputs {
-        let input = input.context("Maelstrom input could not be deserialized")?;
-        state
-            .step(input, &mut stdout)
-            .context("Node step function failed")?;
-    }
-    return Ok(());
+    event_loop(DistributedNode { id: 0 })
 }
