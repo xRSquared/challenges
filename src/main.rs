@@ -57,93 +57,45 @@ impl Node<(), PayLoad> for DistributedNode {
     }
 
     fn step(&mut self, input: Message<PayLoad>, output: &mut StdoutLock) -> anyhow::Result<()> {
-        match input.body.payload {
+        let mut reply = input.into_reply(Some(&mut self.local_id));
+        let mut reply_to = "";
+        match reply.body.payload {
             | PayLoad::Echo { echo } => {
-                let reply = Message {
-                    src: input.dest,
-                    dest: input.src,
-                    body: Body {
-                        id: Some(self.local_id),
-                        in_reply_to: input.body.id,
-                        payload: PayLoad::EchoOk { echo },
-                    },
-                };
-                serde_json::to_writer(&mut *output, &reply)
-                    .context("Serialize response to init")?;
-                output.write_all(b"\n").context("Write trailing newline")?;
-                self.local_id += 1;
+                reply_to = "echo";
+                reply.body.payload = PayLoad::EchoOk { echo };
             },
-            | PayLoad::EchoOk { .. } => {},
             | PayLoad::Generate => {
+                reply_to = "generate";
                 let guid = Uuid::now_v1(&[self.local_id; 6]);
-                let reply = Message {
-                    src: input.dest,
-                    dest: input.src,
-                    body: Body {
-                        id: Some(self.local_id),
-                        in_reply_to: input.body.id,
-                        payload: PayLoad::GenerateOk { guid },
-                    },
-                };
-                serde_json::to_writer(&mut *output, &reply)
-                    .context("Serialize response to generate")?;
-                output.write_all(b"\n").context("Write trailing newline")?;
-                self.local_id += 1;
+                reply.body.payload = PayLoad::GenerateOk { guid };
             },
-            | PayLoad::GenerateOk { .. } => {},
             | PayLoad::Broadcast { message } => {
-                let reply = Message {
-                    src: input.dest,
-                    dest: input.src,
-                    body: Body {
-                        id: Some(self.local_id),
-                        in_reply_to: input.body.id,
-                        payload: PayLoad::BroadcastOk,
-                    },
-                };
+                reply_to = "broadcast";
+                reply.body.payload = PayLoad::BroadcastOk;
                 self.messages.push(message);
-                serde_json::to_writer(&mut *output, &reply)
-                    .context("Serialize response to broadcast.")?;
-                output.write_all(b"\n").context("Write trailing newline.")?;
-                self.local_id += 1;
-            },
-            | PayLoad::BroadcastOk => {},
+                            },
             | PayLoad::Read => {
-                let reply = Message {
-                    src: input.dest,
-                    dest: input.src,
-                    body: Body {
-                        id: Some(self.local_id),
-                        in_reply_to: input.body.id,
-                        payload: PayLoad::ReadOk {
-                            messages: self.messages.clone(),
-                        },
-                    },
+                reply_to = "read";
+                reply.body.payload = PayLoad::ReadOk {
+                    messages: self.messages.clone(),
                 };
-                serde_json::to_writer(&mut *output, &reply)
-                    .context("Serialize response to read.")?;
-                output.write_all(b"\n").context("Write trailing newline.")?;
-                self.local_id += 1;
             },
-            | PayLoad::ReadOk { .. } => {},
             | PayLoad::Topology { topology } => {
-                let reply = Message {
-                    src: input.dest,
-                    dest: input.src,
-                    body: Body {
-                        id: Some(self.local_id),
-                        in_reply_to: input.body.id,
-                        payload: PayLoad::TopologyOk,
-                    },
-                };
+                reply_to = "topology";
+                reply.body.payload = PayLoad::TopologyOk;
                 self.topology = Some(topology);
-                serde_json::to_writer(&mut *output, &reply)
-                    .context("Serialize response to topology.")?;
-                output.write_all(b"\n").context("Write trailing newline.")?;
-                self.local_id += 1;
             },
+            | PayLoad::EchoOk { .. }
+            | PayLoad::GenerateOk { .. }
+            | PayLoad::BroadcastOk
+            | PayLoad::ReadOk { .. }
             | PayLoad::TopologyOk => {},
         }
+        serde_json::to_writer(&mut *output, &reply)
+            .context(format!("Serialize response to {}", reply_to))?;
+        output.write_all(b"\n").context("Write trailing newline")?;
+        self.local_id += 1;
+
         return Ok(());
     }
 }

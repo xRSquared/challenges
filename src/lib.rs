@@ -1,15 +1,31 @@
-use std::{io::{BufRead, StdoutLock, Write}, collections::HashMap};
+use std::io::{BufRead, StdoutLock, Write};
 
 use anyhow::{Context, Ok};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message<Payload> {
     pub src: String,
     pub dest: String,
     pub body: Body<Payload>,
 }
-#[derive(Debug, Serialize, Deserialize)]
+
+impl<Payload> Message<Payload> {
+    /// Turn message into a reply
+    pub fn into_reply(self, id: Option<&mut u8>) -> Self {
+        return Self {
+            src: self.dest,
+            dest: self.src,
+            body: Body {
+                id: Some(*id.unwrap()),
+                in_reply_to: self.body.id,
+                payload: self.body.payload,
+            },
+        };
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Body<Payload> {
     #[serde(rename = "msg_id")]
     pub id: Option<u8>,
@@ -18,7 +34,7 @@ pub struct Body<Payload> {
     pub payload: Payload,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 enum InitPayload {
@@ -27,7 +43,7 @@ enum InitPayload {
 }
 
 //NOTE: needed from Go implementation
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InitNodes {
     pub node_id: Option<String>,
     pub node_ids: Vec<String>,
@@ -65,6 +81,7 @@ where
     };
     let mut node: N = Node::from_init(inital_state, init).context("Node initilization failed")?;
 
+    // NOTE: can't into_reply() here beacause `init` is consumed above
     let reply = Message {
         src: init_message.dest,
         dest: init_message.src,
@@ -74,6 +91,7 @@ where
             payload: InitPayload::InitOk,
         },
     };
+
     serde_json::to_writer(&mut stdout, &reply).context("Serialize response to init.")?;
     stdout
         .write_all(b"\n")
