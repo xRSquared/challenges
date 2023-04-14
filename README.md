@@ -38,6 +38,17 @@ I decided to solve the Problem by implementing it with two threads.
 
 > NOTE:  I learned threading from the offical [rust book](https://doc.rust-lang.org/book/ch16-01-threads.html)
 
+### 3c: Fault Tolerant Broadcast
+
+#### Problem
+
+- Sometimes a node might not be able to communicate with other nodes,
+but we must ensure that information passes along to all nodes
+
+#### Solution
+
+- Solution to [3b](#3b: multi-node broadcast) is already fault tolerant
+
 ## Learnings
 
 - `anyhow` package is great!

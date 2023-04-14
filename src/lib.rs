@@ -125,7 +125,7 @@ where
         .context("Writing trailing newline.")?;
 
     drop(lines);
-    // NOTE: Handle message parsing in other thread
+    // NOTE: Handle message parsing in other thread - spawned in node::init
     let handler = thread::spawn(move || {
         let stdin = std::io::stdin().lock();
         let lines = stdin.lines();
