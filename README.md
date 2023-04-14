@@ -49,7 +49,35 @@ but we must ensure that information passes along to all nodes
 
 - Solution to [3b](#3b: multi-node broadcast) is already fault tolerant
 
+### 3d: Efficient Broadcast, Part I
+
+#### Problem
+
+- We want to make the Propagation of values efficient with the following properties:
+    - Messages-per-operation is below 30
+    - Median latency is below 400ms
+    - Maximum latency is below 600ms
+
+#### Solution
+
+1. Move from using Vec to using HashSet, which allows for faster lookups
+2. During Propogation, only send values that haven't been sent to given node before
+(reduced multi-broadcast maximum by 100ms)
+    - To preserve fault tolerance, require confirmation before adding a value
+    `known_by_node` list
+3. Only send a `Payload::Share` when there is something to share
+(reduced multi-broadcast maximum by 20ms)
+4. reduced sleep duration to `10ms` in Propogation event spawner
+(reduced multi-broadcast maximum to 5ms)
+
+#### TODO
+- play with graph topology to get the pmax below 600ms, currently at 800ms-ish
+
 ## Learnings
 
 - `anyhow` package is great!
   - can provide context to errors
+
+## Notes
+
+use `~/maelstrom/maelstrom serve` to view logs in browser.

@@ -1,9 +1,22 @@
+use std::collections::HashSet;
 use std::io::{BufRead, StdoutLock, Write};
 use std::sync::mpsc;
 use std::thread;
 
 use anyhow::{Context, Ok};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use petgraph::graph::{NodeIndex, UnGraph};
+use petgraph::algo::{dijkstra, min_spanning_tree};
+use petgraph::data::FromElements;
+use petgraph::dot::{Dot, Config};
+
+
+const node_ids:HashSet<String> = HashSet::from(["n1","n2"]);
+const graph = UnGraph::<_, _>::from_elements(node_ids);
+min_spanning_tree(graph);
+
+
 
 #[derive(Debug)]
 pub enum Event<Payload> {
@@ -22,7 +35,7 @@ pub struct Message<Payload> {
 
 impl<Payload> Message<Payload> {
     /// Turn message into a reply
-    pub fn into_reply(self, id: Option<&mut u8>) -> Self {
+    pub fn into_reply(self, id: Option<&mut usize>) -> Self {
         return Self {
             src: self.dest,
             dest: self.src,
@@ -48,8 +61,8 @@ impl<Payload> Message<Payload> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Body<Payload> {
     #[serde(rename = "msg_id")]
-    pub id: Option<u8>,
-    pub in_reply_to: Option<u8>,
+    pub id: Option<usize>,
+    pub in_reply_to: Option<usize>,
     #[serde(flatten)] // IMPORTANT: removes "payload" from json serialization
     pub payload: Payload,
 }
@@ -66,7 +79,7 @@ enum InitPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InitNodes {
     pub node_id: String,
-    pub node_ids: Vec<String>,
+    pub node_ids: HashSet<String>,
 }
 
 pub trait Node<State, Payload> {
