@@ -12,6 +12,10 @@ switch "$test"
         ~/maelstrom/maelstrom test -w broadcast --bin ./target/debug/rust-distributed-sys-challenge --node-count 5 --time-limit 20 --rate 10
     case "fault-tolarant"
         ~/maelstrom/maelstrom test -w broadcast --bin ./target/debug/rust-distributed-sys-challenge --node-count 5 --time-limit 20 --rate 10 --nemesis partition
+    case "efficient-broadcast"
+        ~/maelstrom/maelstrom test -w broadcast --bin ./target/debug/rust-distributed-sys-challenge --node-count 25 --time-limit 20 --rate 100 --latency 100
+    case "serve"
+        ~/maelstrom/maelstrom serve
     case '*'
         echo unknown test $test
 end
