@@ -1,5 +1,7 @@
 use rust_distributed_sys_challenge::*;
 
+use rand::{rngs::StdRng, Rng, SeedableRng};
+
 use anyhow::{Context, Ok};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -50,8 +52,62 @@ struct DistributedNode {
     node_id: String,
     local_id: usize,
     messages: HashSet<usize>,
-    neighborhood: HashSet<String>,
+    neighbors: HashSet<String>,
     known_by_node: HashMap<String, HashSet<usize>>,
+}
+
+fn generate_small_world_toplogy(
+    num_nodes: usize,
+    local_cluster_count: usize,
+    rewire_probability: f32,
+) -> HashMap<String, HashSet<String>> {
+    // initial setup
+    let mut nodes = HashMap::<String, HashSet<String>>::new();
+    let mut rng = StdRng::seed_from_u64(1);
+    let num_neighbors = num_nodes / local_cluster_count;
+    let beta = rewire_probability; // probability of rewiring (connecting outside of nearest k)
+
+    // NOTE: generate nodes
+    for i in 0..num_nodes {
+        nodes
+            .entry(format!("n{}", i))
+            .or_insert(HashSet::<String>::new());
+    }
+
+    // NOTE: every node is a neighbor of the nearest `k` nodes
+    for i in 0..num_nodes {
+        for j in 1..num_neighbors + 1 {
+            let neighbor = (i + j) % num_nodes; // easy way to wrap around
+            let ith_node = format!("n{}", i);
+            let neighbor_node = format!("n{}", neighbor);
+            nodes
+                .get_mut(&ith_node)
+                .unwrap()
+                .insert(neighbor_node.clone());
+            nodes.get_mut(&neighbor_node).unwrap().insert(ith_node);
+        }
+    }
+    // NOTE: rewire edges from each node
+    // slightly different from the original watts-strogatz algorithm but should be equivalent
+    for i in 0..num_nodes {
+        for j in 0..num_nodes {
+            if i < j && rng.gen::<f32>() < beta {
+                let ith_node = format!("n{}", i);
+                let jth_node = format!("n{}", j);
+                nodes.get_mut(&ith_node).unwrap().remove(&jth_node);
+                nodes.get_mut(&jth_node).unwrap().remove(&ith_node);
+
+                let new_neighbor = rng.gen_range(0..num_nodes);
+                let new_neighbor_node = format!("n{}", new_neighbor);
+                nodes
+                    .get_mut(&ith_node)
+                    .unwrap()
+                    .insert(new_neighbor_node.clone());
+                nodes.get_mut(&new_neighbor_node).unwrap().insert(ith_node);
+            }
+        }
+    }
+    return nodes;
 }
 
 // NOTE: state machine
@@ -62,11 +118,8 @@ impl Node<(), PayLoad> for DistributedNode {
         sender: mpsc::Sender<Event<PayLoad>>,
     ) -> anyhow::Result<Self> {
         std::thread::spawn(move || loop {
-            // 10 -> pmax: 0
-            // 25 -> pmax: 20
-            // 50 -> pmax: 48
-            // 100 -> pmax: 156
-            std::thread::sleep(Duration::from_millis(10));
+            let propogation_delay = 450;
+            std::thread::sleep(Duration::from_millis(propogation_delay));
             if let Err(_) = sender.send(Event::Propogate) {
                 return Ok(());
             }
@@ -75,7 +128,7 @@ impl Node<(), PayLoad> for DistributedNode {
             node_id: init.node_id,
             local_id: 1,
             messages: HashSet::new(),
-            neighborhood: HashSet::new(),
+            neighbors: HashSet::new(),
             known_by_node: init
                 .node_ids
                 .into_iter()
@@ -91,7 +144,7 @@ impl Node<(), PayLoad> for DistributedNode {
                 // NOTE: currently just ends on test end. That is fine
             },
             | Event::Propogate => {
-                for node_to_message in &self.neighborhood {
+                for node_to_message in &self.neighbors {
                     let messages_to_send: HashSet<usize> = self
                         .messages
                         .iter()
@@ -99,13 +152,8 @@ impl Node<(), PayLoad> for DistributedNode {
                         .filter(|message| !self.known_by_node[node_to_message].contains(message))
                         .collect();
 
-                    // IMPORTANT: only share if there is something to share
+                    // IMPORTANT: For efficiency, only share if there is something to share.
                     if messages_to_send.len() != 0 {
-                        eprintln!(
-                            "notifing {}/{}",
-                            messages_to_send.len(),
-                            self.messages.len()
-                        );
                         Message {
                             src: self.node_id.clone(),
                             dest: node_to_message.clone(),
@@ -118,7 +166,7 @@ impl Node<(), PayLoad> for DistributedNode {
                             },
                         }
                         .send(&mut *output, "Propogate")
-                        .context(format!("sharing messages to {}", node_to_message))?;
+                        .context(format!("Sharing/sending messages to {}", node_to_message))?;
                     }
                 }
             },
@@ -127,8 +175,6 @@ impl Node<(), PayLoad> for DistributedNode {
                 match reply.body.payload {
                     // NOTE: can make this more efficient by sending known_to and updating between
                     // all nodes NOT just within a node
-                    // IMPORTANT: if that isn't enough to pass challenge 3d then change the network
-                    // topology
                     | PayLoad::Share { messages: values } => {
                         // NOTE: The Node knows that source node knows that values that the source node
                         // sent
@@ -167,9 +213,12 @@ impl Node<(), PayLoad> for DistributedNode {
                         };
                         reply.send(output, "read")?;
                     },
-                    | PayLoad::Topology { mut topology } => {
+                    | PayLoad::Topology { topology } => {
                         reply.body.payload = PayLoad::TopologyOk;
-                        self.neighborhood = topology.remove(&self.node_id).unwrap();
+                        let num_nodes = topology.len();
+                        self.neighbors = generate_small_world_toplogy(num_nodes, 4, 0.3)
+                            .remove(&self.node_id)
+                            .unwrap();
                         reply.send(output, "topology")?;
                     },
                     | PayLoad::EchoOk { .. }

@@ -6,16 +6,6 @@ use std::thread;
 use anyhow::{Context, Ok};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use petgraph::graph::{NodeIndex, UnGraph};
-use petgraph::algo::{dijkstra, min_spanning_tree};
-use petgraph::data::FromElements;
-use petgraph::dot::{Dot, Config};
-
-
-const node_ids:HashSet<String> = HashSet::from(["n1","n2"]);
-const graph = UnGraph::<_, _>::from_elements(node_ids);
-min_spanning_tree(graph);
-
 
 
 #[derive(Debug)]
