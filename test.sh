@@ -14,6 +14,8 @@ switch "$test"
         ~/maelstrom/maelstrom test -w broadcast --bin ./target/debug/rust-distributed-sys-challenge --node-count 5 --time-limit 20 --rate 10 --nemesis partition
     case "efficient-broadcast"
         ~/maelstrom/maelstrom test -w broadcast --bin ./target/debug/rust-distributed-sys-challenge --node-count 25 --time-limit 20 --rate 100 --latency 100
+    case "g-counter"
+        ~/maelstrom/maelstrom test -w g-counter --bin ~/go/bin/maelstrom-counter --node-count 3 --rate 100 --time-limit 20 --nemesis partition
     case "serve"
         ~/maelstrom/maelstrom serve
     case '*'
