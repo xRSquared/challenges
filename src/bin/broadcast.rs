@@ -55,7 +55,15 @@ struct DistributedNode {
     neighbors: HashSet<String>,
     known_by_node: HashMap<String, HashSet<usize>>,
 }
-
+/// Generate a small world topology
+///
+/// args:
+///    - `num_nodes`: number of nodes in the network
+///    - `local_cluster_count`: number of nodes in each local cluste
+///    - `rewire_probability`: probability of rewiring (connecting outside of nearest k)
+///
+/// returns:
+///   - `HashMap<String, HashSet<String>>`: map of node to neighbors
 fn generate_small_world_toplogy(
     num_nodes: usize,
     local_cluster_count: usize,
