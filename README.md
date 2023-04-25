@@ -123,6 +123,7 @@ with the following parameters:
 
 - `anyhow` package is great!
   - can provide context to errors
+- Rust Enums are AMAZING!
 
 ## Notes
 
