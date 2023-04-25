@@ -6,12 +6,10 @@ use std::thread;
 use anyhow::{Context, Ok};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-
-
 #[derive(Debug)]
-pub enum Event<Payload> {
+pub enum Event<Payload, GeneratedPayload> {
     Message(Message<Payload>),
-    Propogate,
+    GeneratedEvent(Message<GeneratedPayload>),
     // NOTE: signifies end of stdin messages - used to stop `Propogate` loop
     EndOfMessages,
 }
@@ -72,23 +70,28 @@ pub struct InitNodes {
     pub node_ids: HashSet<String>,
 }
 
-pub trait Node<State, Payload> {
+pub trait Node<State, Payload, GeneratedPayload> {
     fn from_init(
         state: State,
         init: InitNodes,
-        sender: mpsc::Sender<Event<Payload>>,
+        sender: mpsc::Sender<Event<Payload, GeneratedPayload>>,
     ) -> anyhow::Result<Self>
     //IMPORTANT: need to tell compiler `Node` is of fixed size
     where
         Self: Sized;
-    fn step(&mut self, event: Event<Payload>, output: &mut StdoutLock) -> anyhow::Result<()>;
+    fn step(
+        &mut self,
+        event: Event<Payload, GeneratedPayload>,
+        output: &mut StdoutLock,
+    ) -> anyhow::Result<()>;
 }
 
 // TODO: move initialization to private function
-pub fn event_loop<N, State, Payload>(inital_state: State) -> anyhow::Result<()>
+pub fn event_loop<N, State, Payload, GeneratedPayload>(inital_state: State) -> anyhow::Result<()>
 where
     Payload: DeserializeOwned + Send + 'static,
-    N: Node<State, Payload>,
+    GeneratedPayload:  Send + 'static,
+    N: Node<State, Payload, GeneratedPayload>,
 {
     let stdin = std::io::stdin().lock();
     let mut lines = stdin.lines();

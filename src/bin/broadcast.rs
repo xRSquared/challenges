@@ -15,7 +15,7 @@ use uuid::{self, Uuid};
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")] // IMPORTANT: returns {type:"echo", echo:"..."}
 #[serde(rename_all = "snake_case")]
-enum PayLoad {
+enum Payload {
     //NOTE: find a way to remove OKs from this enum
     Echo {
         echo: String,
@@ -40,21 +40,24 @@ enum PayLoad {
         topology: HashMap<String, HashSet<String>>,
     },
     TopologyOk,
-    Share {
-        messages: HashSet<usize>,
-    },
-    ShareOk {
-        messages: HashSet<usize>,
-    },
 }
 
-struct DistributedNode {
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+enum GeneratedPayload {
+    Share { messages: HashSet<usize> },
+    ShareOk { messages: HashSet<usize> },
+}
+
+struct BroadcastNode {
     node_id: String,
     local_id: usize,
     messages: HashSet<usize>,
     neighbors: HashSet<String>,
     known_by_node: HashMap<String, HashSet<usize>>,
 }
+
 /// Generate a small world topology
 ///
 /// args:
@@ -119,20 +122,17 @@ fn generate_small_world_toplogy(
 }
 
 // NOTE: state machine
-impl Node<(), PayLoad> for DistributedNode {
+impl Node<(), Payload, GeneratedPayload> for BroadcastNode {
     fn from_init(
         _state: (),
         init: InitNodes,
-        sender: mpsc::Sender<Event<PayLoad>>,
+        sender: mpsc::Sender<Event<Payload, GeneratedPayload>>,
     ) -> anyhow::Result<Self> {
         std::thread::spawn(move || loop {
             let propogation_delay = 450;
             std::thread::sleep(Duration::from_millis(propogation_delay));
-            if let Err(_) = sender.send(Event::Propogate) {
-                return Ok(());
-            }
         });
-        return Ok(DistributedNode {
+        return Ok(BroadcastNode {
             node_id: init.node_id,
             local_id: 1,
             messages: HashSet::new(),
@@ -145,37 +145,58 @@ impl Node<(), PayLoad> for DistributedNode {
         });
     }
 
-    fn step(&mut self, event: Event<PayLoad>, output: &mut StdoutLock) -> anyhow::Result<()> {
+    fn step(
+        &mut self,
+        event: Event<Payload, GeneratedPayload>,
+        output: &mut StdoutLock,
+    ) -> anyhow::Result<()> {
         match event {
             | Event::EndOfMessages => {
                 // IMPORTANT: handle terminating of Propogate loop
                 // NOTE: currently just ends on test end. That is fine
             },
-            | Event::Propogate => {
-                for node_to_message in &self.neighbors {
-                    let messages_to_send: HashSet<usize> = self
-                        .messages
-                        .iter()
-                        .copied()
-                        .filter(|message| !self.known_by_node[node_to_message].contains(message))
-                        .collect();
+            | Event::GeneratedEvent(message) => {
+                let mut reply = message.into_reply(Some(&mut self.local_id));
+                match reply.body.payload {
+                    | GeneratedPayload::Share { messages } => {
+                        for node_to_message in &self.neighbors {
+                            let messages_to_send: HashSet<usize> = self
+                                .messages
+                                .iter()
+                                .copied()
+                                .filter(|message| {
+                                    !self.known_by_node[node_to_message].contains(message)
+                                })
+                                .collect();
 
-                    // IMPORTANT: For efficiency, only share if there is something to share.
-                    if messages_to_send.len() != 0 {
-                        Message {
-                            src: self.node_id.clone(),
-                            dest: node_to_message.clone(),
-                            body: Body {
-                                id: None,
-                                in_reply_to: None,
-                                payload: PayLoad::Share {
-                                    messages: messages_to_send,
-                                },
-                            },
+                            // IMPORTANT: For efficiency, only share if there is something to share.
+                            if messages_to_send.len() != 0 {
+                                Message {
+                                    src: self.node_id.clone(),
+                                    dest: node_to_message.clone(),
+                                    body: Body {
+                                        id: None,
+                                        in_reply_to: None,
+                                        payload: GeneratedPayload::Share {
+                                            messages: messages_to_send,
+                                        },
+                                    },
+                                }
+                                .send(&mut *output, "Propogate")
+                                .context(format!(
+                                    "Sharing/sending messages to {}",
+                                    node_to_message
+                                ))?;
+                            }
                         }
-                        .send(&mut *output, "Propogate")
-                        .context(format!("Sharing/sending messages to {}", node_to_message))?;
-                    }
+                    },
+                    | GeneratedPayload::ShareOk { messages: values } => {
+                        // NOTE: The node knows that the source node has recieved our sent values
+                        self.known_by_node
+                            .get_mut(&reply.dest) // NOTE: destination of reply
+                            .unwrap()
+                            .extend(values.iter().copied());
+                    },
                 }
             },
             | Event::Message(message) => {
@@ -183,57 +204,39 @@ impl Node<(), PayLoad> for DistributedNode {
                 match reply.body.payload {
                     // NOTE: can make this more efficient by sending known_to and updating between
                     // all nodes NOT just within a node
-                    | PayLoad::Share { messages: values } => {
-                        // NOTE: The Node knows that source node knows that values that the source node
-                        // sent
-                        self.known_by_node
-                            .get_mut(&reply.dest) // NOTE: destination of reply
-                            .unwrap()
-                            .extend(values.iter().copied());
-                        self.messages.extend(&values);
-                        reply.body.payload = PayLoad::ShareOk { messages: values };
-                        reply.send(output, "Share")?;
-                    },
-                    | PayLoad::ShareOk { messages: values } => {
-                        // NOTE: The node knows that the source node has recieved our sent values
-                        self.known_by_node
-                            .get_mut(&reply.dest) // NOTE: destination of reply
-                            .unwrap()
-                            .extend(values.iter().copied());
-                    },
-                    | PayLoad::Echo { echo } => {
-                        reply.body.payload = PayLoad::EchoOk { echo };
+                    | Payload::Echo { echo } => {
+                        reply.body.payload = Payload::EchoOk { echo };
                         reply.send(output, "echo")?;
                     },
-                    | PayLoad::Generate => {
+                    | Payload::Generate => {
                         let guid = Uuid::now_v1(&[self.local_id as u8; 6]);
-                        reply.body.payload = PayLoad::GenerateOk { guid };
+                        reply.body.payload = Payload::GenerateOk { guid };
                         reply.send(output, "generate")?;
                     },
-                    | PayLoad::Broadcast { message } => {
-                        reply.body.payload = PayLoad::BroadcastOk;
+                    | Payload::Broadcast { message } => {
+                        reply.body.payload = Payload::BroadcastOk;
                         self.messages.insert(message);
                         reply.send(output, "broadcast")?;
                     },
-                    | PayLoad::Read => {
-                        reply.body.payload = PayLoad::ReadOk {
+                    | Payload::Read => {
+                        reply.body.payload = Payload::ReadOk {
                             messages: self.messages.clone(),
                         };
                         reply.send(output, "read")?;
                     },
-                    | PayLoad::Topology { topology } => {
-                        reply.body.payload = PayLoad::TopologyOk;
+                    | Payload::Topology { topology } => {
+                        reply.body.payload = Payload::TopologyOk;
                         let num_nodes = topology.len();
                         self.neighbors = generate_small_world_toplogy(num_nodes, 4, 0.3)
                             .remove(&self.node_id)
                             .unwrap();
                         reply.send(output, "topology")?;
                     },
-                    | PayLoad::EchoOk { .. }
-                    | PayLoad::GenerateOk { .. }
-                    | PayLoad::BroadcastOk
-                    | PayLoad::ReadOk { .. }
-                    | PayLoad::TopologyOk => {},
+                    | Payload::EchoOk { .. }
+                    | Payload::GenerateOk { .. }
+                    | Payload::BroadcastOk
+                    | Payload::ReadOk { .. }
+                    | Payload::TopologyOk => {},
                 }
                 self.local_id += 1;
             },
@@ -243,5 +246,5 @@ impl Node<(), PayLoad> for DistributedNode {
 }
 
 fn main() -> anyhow::Result<()> {
-    return event_loop::<DistributedNode, _, _>(());
+    return event_loop::<BroadcastNode, _, _,_>(());
 }
