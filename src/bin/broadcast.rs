@@ -126,7 +126,7 @@ impl Node<(), Payload, GeneratedPayload> for BroadcastNode {
     fn from_init(
         _state: (),
         init: InitNodes,
-        sender: mpsc::Sender<Event<Payload, GeneratedPayload>>,
+        _sender: mpsc::Sender<Event<Payload, GeneratedPayload>>,
     ) -> anyhow::Result<Self> {
         std::thread::spawn(move || loop {
             let propogation_delay = 450;

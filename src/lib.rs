@@ -9,8 +9,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 #[derive(Debug)]
 pub enum Event<Payload, GeneratedPayload> {
     Message(Message<Payload>),
-    GeneratedEvent(Message<GeneratedPayload>),
-    // NOTE: signifies end of stdin messages - used to stop `Propogate` loop
+    GeneratedEvent(Message<GeneratedPayload>), //NOTE: signifies end of stdin messages - used to stop `Propogate` loop
     EndOfMessages,
 }
 
@@ -90,7 +89,7 @@ pub trait Node<State, Payload, GeneratedPayload> {
 pub fn event_loop<N, State, Payload, GeneratedPayload>(inital_state: State) -> anyhow::Result<()>
 where
     Payload: DeserializeOwned + Send + 'static,
-    GeneratedPayload:  Send + 'static,
+    GeneratedPayload: Send + 'static,
     N: Node<State, Payload, GeneratedPayload>,
 {
     let stdin = std::io::stdin().lock();
