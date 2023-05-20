@@ -1,6 +1,6 @@
 pub mod token;
-use token::Token;
 use anyhow::Result;
+use token::Token;
 
 struct Lexer {
     input: Vec<char>,
@@ -21,7 +21,7 @@ impl Lexer {
         lex.read_char();
         return lex;
     }
-    pub fn read_char(&mut self) -> () {
+    fn read_char(&mut self) -> () {
         if self.read_position >= self.input.len() {
             self.char = 0 as char; // NOTE: should this be EOF?
         } else {
@@ -30,9 +30,30 @@ impl Lexer {
         self.position = self.read_position;
         self.read_position += 1;
     }
+    fn skip_whitespace(&mut self) -> () {
+        while [' ', '\t', '\n', '\r'].contains(&self.char) {
+            self.read_char();
+        }
+    }
+    fn read_identifier(&mut self) -> String {
+        let position = self.position;
+        while token::is_letter(self.char) {
+            self.read_char();
+        }
+        return self.input[position..self.position].iter().collect();
+    }
+    // TODO: handle floats
+    fn read_number(&mut self) -> String {
+        let position = self.position;
+        while token::is_digit(self.char) {
+            self.read_char();
+        }
+        return self.input[position..self.position].iter().collect();
+    }
     // TODO: make this an iterator
     fn next_token(&mut self) -> Result<Token> {
         let tok: token::Token;
+        self.skip_whitespace();
 
         match self.char {
             | '=' => tok = Token::Assign,
@@ -44,7 +65,16 @@ impl Lexer {
             | '{' => tok = Token::LBrace,
             | '}' => tok = Token::RBrace,
             | '\0' => tok = Token::EOF,
-            | _ => todo!(),
+            | _ => {
+                if token::is_letter(self.char) {
+                    let ident = self.read_identifier();
+                    return Ok(token::LookupIdentifier(&ident));
+                } else if token::is_digit(self.char) {
+                    return Ok(Token::Int(self.read_number()));
+                } else {
+                    return Ok(Token::Illegal);
+                }
+            },
         }
         self.read_char();
         return Ok(tok);
@@ -55,13 +85,23 @@ impl Lexer {
 mod test {
     use anyhow::Result;
 
-    use super::{Token, Lexer};
+    use super::{Lexer, Token};
 
-    #[test]
-    fn get_next_token() -> Result<()> {
-        let input = "=+(){},;";
+    fn iterate_through_tokens(input: &str, tokens: Vec<Token>) -> Result<()> {
         let mut lexer = Lexer::new(input.chars().collect());
 
+        for token in tokens {
+            let lexed_token = lexer.next_token()?;
+            println!("{:?},{:?}", token, lexed_token);
+            assert_eq!(token, lexed_token);
+        }
+
+        return Ok(());
+    }
+
+    #[test]
+    fn simple_lexing_check() -> Result<()> {
+        let input = "=+(){},;";
         let tokens = vec![
             Token::Assign,
             Token::Plus,
@@ -73,14 +113,59 @@ mod test {
             Token::SemiColon,
             Token::EOF,
         ];
+        iterate_through_tokens(input, tokens)
+    }
 
-        for token in tokens {
-            let lexed_token = lexer.next_token()?;
-            println!("{:?},{:?}",token,lexed_token);
-            assert_eq!(token, lexed_token);
-        }
+    #[test]
+    fn assignment_lexing_check() -> Result<()> {
+        let input = "let five = 5;
+let ten = 10;
 
+let add = fn(x, y) {
+  x + y;
+};
 
-        return Ok(());
+let result = add(five, ten);
+
+";
+        let tokens = vec![
+            Token::Let,
+            Token::Identifier("five".to_string()),
+            Token::Assign,
+            Token::Int("5".to_string()),
+            Token::SemiColon,
+            Token::Let,
+            Token::Identifier("ten".to_string()),
+            Token::Assign,
+            Token::Int("10".to_string()),
+            Token::SemiColon,
+            Token::Let,
+            Token::Identifier("add".to_string()),
+            Token::Assign,
+            Token::Function,
+            Token::LParen,
+            Token::Identifier("x".to_string()),
+            Token::Comma,
+            Token::Identifier("y".to_string()),
+            Token::RParen,
+            Token::LBrace,
+            Token::Identifier("x".to_string()),
+            Token::Plus,
+            Token::Identifier("y".to_string()),
+            Token::SemiColon,
+            Token::RBrace,
+            Token::SemiColon,
+            Token::Let,
+            Token::Identifier("result".to_string()),
+            Token::Assign,
+            Token::Identifier("add".to_string()),
+            Token::LParen,
+            Token::Identifier("five".to_string()),
+            Token::Comma,
+            Token::Identifier("ten".to_string()),
+            Token::RParen,
+            Token::SemiColon,
+        ];
+        iterate_through_tokens(input, tokens)
     }
 }
